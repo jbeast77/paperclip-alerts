@@ -42,6 +42,7 @@
     <p class="good">Alerts are on for this phone.</p>
     <p>Send this code to Claude once to connect it:</p>
     <textarea id="code" readonly aria-label="Connection code"></textarea>
+    <button id="share" type="button" hidden style="margin-bottom:12px">Send code</button>
     <button id="copy" type="button">Copy code</button>
     <button id="turnOff" class="quiet" type="button">Turn off alerts</button>
   </div>
@@ -94,6 +95,11 @@ async function start() {
       $('turnOn').disabled = false;
     }
   };
+
+  if (navigator.share) {
+    $('share').hidden = false;
+    $('share').onclick = () => navigator.share({ title: 'Paperclip alert code', text: $('code').value }).catch(() => {});
+  }
 
   $('copy').onclick = async () => {
     try {
