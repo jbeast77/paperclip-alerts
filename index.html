@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paperclip Alerts</title>
+<meta name="description" content="Turns on phone alerts for a private Paperclip install.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<meta name="theme-color" content="#1b2a41">
+<style>
+  :root { color-scheme: light dark; --bg:#f6f7f9; --card:#fff; --ink:#17202c; --soft:#566373; --line:#d9dee5; --accent:#1b4fbf; --on:#fff; --good:#17693a; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#11161d; --card:#1a212b; --ink:#eef1f5; --soft:#a4afbd; --line:#323c49; --accent:#7da4f5; --on:#0d1420; --good:#6fd39a; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:17px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:30rem; margin:0 auto; padding:32px 16px 48px; }
+  h1 { font-size:1.6rem; line-height:1.2; margin:0 0 8px; }
+  p { margin:0 0 16px; }
+  .soft { color:var(--soft); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px; margin-top:20px; }
+  button { font:inherit; font-weight:600; width:100%; min-height:52px; border-radius:10px; border:1px solid var(--accent); background:var(--accent); color:var(--on); cursor:pointer; }
+  button.quiet { background:transparent; color:var(--accent); font-weight:500; margin-top:12px; }
+  button:focus-visible { outline:3px solid var(--ink); outline-offset:2px; }
+  textarea { width:100%; height:7.5rem; margin:0 0 12px; padding:10px; font:13px/1.35 ui-monospace,Consolas,monospace; color:var(--ink); background:var(--bg); border:1px solid var(--line); border-radius:8px; resize:none; word-break:break-all; }
+  .good { color:var(--good); font-weight:600; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Paperclip Alerts</h1>
+  <p class="soft">Your phone buzzes when a Paperclip decision needs you. You answer it at your PC.</p>
+
+  <div class="card" id="fromAlert" hidden><p style="margin:0"><strong>A decision is waiting.</strong> Open Paperclip on your PC to answer it.</p></div>
+
+  <div class="card" id="off" hidden>
+    <button id="turnOn" type="button">Turn on alerts</button>
+    <p class="soft" id="offNote" style="margin:12px 0 0">Tap Allow when your phone asks.</p>
+  </div>
+
+  <div class="card" id="on" hidden>
+    <p class="good">Alerts are on for this phone.</p>
+    <p>Send this code to Claude once to connect it:</p>
+    <textarea id="code" readonly aria-label="Connection code"></textarea>
+    <button id="copy" type="button">Copy code</button>
+    <button id="turnOff" class="quiet" type="button">Turn off alerts</button>
+  </div>
+
+  <div class="card" id="install" hidden>
+    <p>Optional: add this to your home screen so Android treats it like an app.</p>
+    <button id="installBtn" class="quiet" type="button" style="margin:0">Add to home screen</button>
+  </div>
+
+  <div class="card" id="problem" hidden><p id="problemText" style="margin:0"></p></div>
+</main>
+<script>
+const PUBLIC_KEY = 'BLZB5a6nLuy_ZfpEpxONLJBZwEeYREEnuoA7wCix5BJo49pfDW3JcC2iPFgzukhzMPqI6ToBsjqj_dr43vC3FP4';
+const $ = (id) => document.getElementById(id);
+const showProblem = (text) => { $('problemText').textContent = text; $('problem').hidden = false; };
+const keyBytes = () => Uint8Array.from(atob(PUBLIC_KEY.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+const toCode = (sub) => btoa(JSON.stringify(sub.toJSON())).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+async function render(reg) {
+  $('problem').hidden = true;
+  const sub = await reg.pushManager.getSubscription();
+  $('on').hidden = !sub;
+  $('off').hidden = !!sub;
+  if (sub) $('code').value = toCode(sub);
+}
+
+async function start() {
+  if (new URLSearchParams(location.search).get('from') === 'alert') $('fromAlert').hidden = false;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+    showProblem('This browser cannot receive alerts. Open this page in Chrome on your Android phone.');
+    return;
+  }
+  const reg = await navigator.serviceWorker.register('sw.js');
+  navigator.serviceWorker.addEventListener('message', (e) => { if (e.data === 'alert') $('fromAlert').hidden = false; });
+
+  $('turnOn').onclick = async () => {
+    $('turnOn').disabled = true;
+    try {
+      const answer = await Notification.requestPermission();
+      if (answer !== 'granted') {
+        showProblem('Alerts are blocked for this page. In Chrome, tap the icon beside the address, choose Notifications, set it to Allow, then tap Turn on alerts again.');
+        return;
+      }
+      const ready = await navigator.serviceWorker.ready;
+      await ready.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes() });
+      await render(ready);
+    } catch (error) {
+      showProblem('That did not work: ' + error.message);
+    } finally {
+      $('turnOn').disabled = false;
+    }
+  };
+
+  $('copy').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText($('code').value);
+      $('copy').textContent = 'Copied';
+    } catch {
+      $('code').select();
+      $('copy').textContent = 'Long-press the code to copy';
+    }
+    setTimeout(() => { $('copy').textContent = 'Copy code'; }, 2500);
+  };
+
+  $('turnOff').onclick = async () => {
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) await sub.unsubscribe();
+    await render(reg);
+  };
+
+  await render(reg);
+}
+
+let installEvent;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvent = e; $('install').hidden = false; });
+window.addEventListener('appinstalled', () => { $('install').hidden = true; });
+$('installBtn').onclick = async () => { if (!installEvent) return; installEvent.prompt(); await installEvent.userChoice; installEvent = null; $('install').hidden = true; };
+
+start().catch((error) => showProblem('This page could not start: ' + error.message));
+</script>
+</body>
+</html>
