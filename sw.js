@@ -13,11 +13,15 @@ self.addEventListener('push', (event) => {
     icon: 'icon-192.png',
     badge: 'badge-96.png',
     vibrate: [200, 100, 200],
+    // Where a tap goes: the card's address when the alert carries one (set by the Paperclip server's alert program).
+    data: { url: typeof data.url === 'string' ? data.url : null },
   }));
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  const target = event.notification.data && event.notification.data.url;
+  if (typeof target === 'string' && target.startsWith('https://')) { event.waitUntil(self.clients.openWindow(target)); return; }
   event.waitUntil((async () => {
     const open = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     if (open.length) { open[0].postMessage('alert'); return open[0].focus(); }
